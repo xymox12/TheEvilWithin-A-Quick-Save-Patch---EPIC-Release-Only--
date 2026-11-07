@@ -1,10 +1,18 @@
+> [!WARNING]
+> **This patch is PoC and fragile.** It can cause the game to crash when you try to
+> reload the QUICKSAVE if the save was made in certain situations, such as
+> during combat, while enemies are active or spawning, during a cutscene,
+> scripted sequence, map transition, or while the game is still loading. Keep
+> backups of your saves and test each save before relying on it.
+
 # The Evil Within — Quick Save Patch
 
 A small, reversible patch for the retail PC build of **The Evil Within** that
 makes the disabled `saveGameSteam` console command perform a normal quick save.
 
-The patch is applied with **Cheat Engine** as a runtime memory patch. It does not
-modify `EvilWithin.exe` on disk and can be toggled off instantly.
+The patch is applied as a **runtime memory patch**, either with the included
+Python script or with Cheat Engine. It does not modify `EvilWithin.exe` on disk
+and can be toggled off instantly.
 
 > Single-player, offline use only. Back up your saves. This project is not
 > affiliated with Tango Gameworks, Bethesda, or Epic Games.
@@ -42,26 +50,6 @@ so you can save at an arbitrary point.
 
 ---
 
-## Important: do not use the old checkpoint patch
-
-An earlier version of this patch redirected the call to vtable `+0xA0`
-(`tngSaveLoadModule::CheckPointSaveGame`) with a `NULL` spawn spot. That writes a
-**checkpoint** save whose spawn entity is the last checkpoint's spawn. At an
-arbitrary point that entity can be stale or belong to another map, so loading
-the save puts you back at the checkpoint or out of the world.
-
-You can see the difference in `QUICKSAVE\mapstart.zwei`:
-
-| Save source | Spawn spot stored |
-|---|---|
-| Old checkpoint patch | `st06_asylummain_player_start_chapter4_division` (stale) |
-| Game's normal save | `player_start` |
-
-This project uses the normal save path, so the old checkpoint patch must be
-disabled before applying this one. The scripts handle that automatically.
-
----
-
 ## Requirements
 
 - The Evil Within retail PC build with this SHA-256:
@@ -70,7 +58,36 @@ disabled before applying this one. The scripts handle that automatically.
   6310988039DB58FC27DCA9C8E6AC00CB45C898DA38BFCCBB00898FA56DD414DB
   ```
 
-- [Cheat Engine](https://cheatengine.org/)
+- Python 3.8+ (for `patch_quicksave.py`), or
+  [Cheat Engine](https://cheatengine.org/)
+
+---
+
+## Python runtime patch (no Cheat Engine)
+
+Start the game first, then run:
+
+```powershell
+python patch_quicksave.py
+```
+
+The script:
+
+1. Finds the running `EvilWithin.exe`.
+2. Finds the module base address.
+3. Verifies the bytes at each patch site.
+4. Writes the three patches to process memory.
+5. Flushes the instruction cache.
+
+Run it again to toggle the patch off. Other options:
+
+```powershell
+python patch_quicksave.py --check    # report the current state
+python patch_quicksave.py --revert   # force the original bytes
+```
+
+If the game is running elevated, run the script from an elevated terminal too.
+The script changes only process memory; it does not touch the exe on disk.
 
 ---
 
@@ -118,21 +135,18 @@ The save is written to:
 Load it from the normal **Continue** / **Load Game** menu. In some builds
 `loadgame quick` also works.
 
-### No-patch alternative
+### When to save
 
-The retail `base\default.cfg` still references the original quick-save bindings:
+Save only when the area is calm:
 
-```text
-//<workshop> REMOVE_QUICK_SAVE_LOAD_FUNCTIONALITY AANG 2014-09-15
-//DEL:
-//bind F8 "savegame quick"
-//bind F9 "loadgame quick"
-//</workshop>
-```
+- no active or aggro'd enemies
+- no combat music
+- no scripted sequence or cutscene
+- no map transition or loading screen
 
-Try `savegame quick` in the console. If it is available, it uses the same normal
-save path. The patch is mainly useful when that command is hidden or gated by the
-save-location check.
+Saving mid-fight can produce a QUICKSAVE that crashes on reload. The save may
+not reconstruct dynamic combat entities such as enemies, projectiles, and
+ragdolls.
 
 ---
 
@@ -144,7 +158,7 @@ RVA = module offset for Cheat Engine. File offset = RVA − `0xC00` for these
 | Site | RVA | File offset | Original | Patched |
 |---|---|---|---|---|
 | Default save name | `0x549A3` | `0x53DA3` | `48 8D 3D 8E 72 4F 01` | `48 8D 3D BE 09 57 01` |
-| idStr argument | `0x54ABF` | `0x53EBF` | `48 8D 54 24 48` | unchanged (restores old patch) |
+| idStr argument | `0x54ABF` | `0x53EBF` | `48 8D 54 24 48` | unchanged |
 | Save call | `0x54AC4` | `0x53EC4` | `FF 90 B0 00 00 00` | `FF 90 98 00 00 00` |
 | Save-location gate | `0x98A17B` | `0x98957B` | `75 11` | `EB 11` |
 
@@ -165,9 +179,10 @@ jnz allowed              -> jmp allowed
 
 ## Troubleshooting
 
-- **Position still wrong after loading:** the current `QUICKSAVE` may still be the
-  old bad checkpoint save. Load a known-good save (or restart the chapter) once,
-  then save again.
+- **Position still wrong after loading:** load a known-good save (or restart the
+  chapter) once, then save again.
+- **Crash when reloading a save made mid-fight:** known limitation. Load an
+  earlier save and only save when the area is calm.
 - **`Cannot save at this location` appears:** the gate patch is not active. Check
   that `EvilWithin.exe+98A17B` is `EB`.
 - **Cheat Engine syntax error:** AA comments use `//`, not `;`. If the Lua script
@@ -175,16 +190,6 @@ jnz allowed              -> jmp allowed
 - **Save during a cutscene/loading screen:** don't. Wait until gameplay is fully
   active.
 - **Game updated:** the RVAs and bytes may differ. Verify the SHA-256 first.
-
----
-
-## Safety
-
-- The Cheat Engine patch changes only process memory, not `EvilWithin.exe` on disk.
-- Do not use this with anti-cheat-protected or multiplayer games. The Evil Within
-  is single-player.
-- Saving in an invalid game state can still produce a bad save. Save during normal
-  gameplay, not during transitions.
 
 ---
 

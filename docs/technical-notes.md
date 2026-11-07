@@ -22,6 +22,8 @@ The command is registered in the command table:
 saveGameSteam -> FUN_140054980
 ```
 
+line 23
+
 `FUN_140054980` builds an `idStr` from the console argument and then calls the
 object's vtable slot `+0xB0`:
 
@@ -157,6 +159,14 @@ The retail `base\default.cfg` still contains the disabled original bindings:
 The autosave callback at `0x140B461C0` also executes `savegame quick` through
 the save manager. The normal save path above is the same one the game uses for
 that command.
+
+## Known limitation: saving mid-fight
+
+The normal save path is designed for save rooms and calm gameplay. Forcing it
+during combat can create a save that crashes on reload, because the world state
+contains dynamic entities (enemies, projectiles, ragdolls, scripted agents) that
+are not reconstructed cleanly. Save only when the area is calm: no active
+enemies, no combat music, and no scripted sequence.
 
 ## Verifying a build
 

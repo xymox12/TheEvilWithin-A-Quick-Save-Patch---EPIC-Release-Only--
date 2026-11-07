@@ -1,0 +1,68 @@
+// Cheat Engine Auto Assembler script
+// The Evil Within (retail PC)
+//
+// What this does
+// --------------
+// The retail `saveGameSteam` command calls idGameLocal vtable+0xB0, which is a
+// `ret 0` stub. The previous version of this script called the checkpoint
+// autosave path (vtable+0xA0) instead. That "works", but it writes a checkpoint
+// save whose spawn spot is the last checkpoint's spawn entity. If you save at
+// an arbitrary point, that spawn entity can be stale or belong to another map,
+// and loading the save puts you back at that checkpoint or out of the world.
+//
+// This version routes `saveGameSteam` to idGameLocal::SaveGame (vtable+0x98),
+// the normal Save Game method used by the in-game save menu:
+//
+//   saveGameSteam -> idGameLocal::SaveGame("QUICKSAVE")
+//                 -> FUN_14082B0D0 -> FUN_14098A010(...)
+//
+// That writes the normal QUICKSAVE payload: spawn spot "player_start", the
+// current player state, and the normal save blocks. It overwrites QUICKSAVE
+// cleanly every time.
+//
+// The second small patch forces the "Cannot save at this location" check to
+// pass, so you can save at an arbitrary point. Do not save during cutscenes,
+// map transitions, or while the game is loading.
+//
+// How to use
+// ----------
+//   1. Start the game and attach Cheat Engine to EvilWithin.exe.
+//   2. Memory View (Ctrl+M) > Tools > Auto Assembler (Ctrl+Alt+A).
+//   3. Paste this whole file, then File > Assign to current cheat table.
+//   4. Tick the entry to enable, untick to restore the original bytes.
+//
+// 0x549A3 / 0x54ABF / 0x54AC4 / 0x98A17B are RVAs relative to EvilWithin.exe,
+// not file offsets.
+
+[ENABLE]
+// saveGameSteam: default slot name "" -> "QUICKSAVE"
+EvilWithin.exe+549A3:
+  db 48 8D 3D BE 09 57 01
+
+// Undo the old checkpoint patch if it is still active.
+// saveGameSteam: lea rdx,[rsp+0x48] (idStr argument)
+EvilWithin.exe+54ABF:
+  db 48 8D 54 24 48
+
+// saveGameSteam: call idGameLocal::SaveGame (vtable+0x98) instead of the stub
+// FF 90 B0 00 00 00 (call [rax+0xB0]) -> FF 90 98 00 00 00 (call [rax+0x98])
+EvilWithin.exe+54AC4:
+  db FF 90 98 00 00 00
+
+// FUN_14098A010: treat the "cannot save at this location" check as allowed
+// 75 11 (jnz) -> EB 11 (jmp)
+EvilWithin.exe+98A17B:
+  db EB
+
+[DISABLE]
+EvilWithin.exe+549A3:
+  db 48 8D 3D 8E 72 4F 01
+
+EvilWithin.exe+54ABF:
+  db 48 8D 54 24 48
+
+EvilWithin.exe+54AC4:
+  db FF 90 B0 00 00 00
+
+EvilWithin.exe+98A17B:
+  db 75
